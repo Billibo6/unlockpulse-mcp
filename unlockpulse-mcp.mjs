@@ -9,7 +9,7 @@ const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
 // en — пригласительная ссылка «MCP» канала @unlockpulse (27.10): Telegram считает вступивших по ней
 const TELEGRAM = { en: "https://t.me/+JITtUsgJ2zE5ZjEy", ru: "https://t.me/razloki" };
-const VERSION = "1.9.0";
+const VERSION = "1.9.1";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -251,7 +251,8 @@ async function callTool(name, args, fetchImpl) {
   const now = Date.now();
   const lang = args.lang === "ru" ? "ru" : "en";
   const home = lang === "ru" ? SITE + "/ru/" : SITE + "/";
-  const base = { source: "Unlock Pulse, " + home, data_updated_utc: data.generated };
+  // 1.9.1: источник — сайт и канал (в EN ссылка-приглашение «mcp»: Telegram считает, сколько пришло из ИИ-ассистентов)
+  const base = { source: "Unlock Pulse, " + home + " · Telegram: " + TELEGRAM[lang], data_updated_utc: data.generated };
   const alerts = { telegram: TELEGRAM[lang], what: lang === "ru"
       ? "Бесплатный канал: оповещение примерно за 24 ч до каждого разлока от 2 % предложения, календарь недели по понедельникам, еженедельная сверка «что говорила история и что случилось»."
       : "Free channel: an alert about 24h before each unlock of 2%+ of supply, a weekly calendar every Monday, and a weekly scorecard of what history suggested vs what happened." };
