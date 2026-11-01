@@ -9,7 +9,7 @@ const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
 // en — пригласительная ссылка «MCP» канала @unlockpulse (27.10): Telegram считает вступивших по ней
 const TELEGRAM = { en: "https://t.me/+JITtUsgJ2zE5ZjEy", ru: "https://t.me/razloki" };
-const VERSION = "1.9.1";
+const VERSION = "1.9.2";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -112,6 +112,16 @@ function shape(e, now, lang, detail) {
   if (e.vol24 != null && e.vol24 < 250000) o.liquidity_note = "Low liquidity: under $250K traded in 24 hours.";
   if (e.data_check) o.warning = "Numbers look inconsistent (unlock value vs market cap); treat with caution.";
   if (e.unpriced) o.warning = "No reliable price for this token; USD value and market cap may be missing.";
+  if (e.date_unconfirmed) {
+    o.date_confirmed = false;
+    o.warning = (o.warning ? o.warning + " " : "") + "Exact date not confirmed: CoinMarketCap files unlocks with an unknown day on the 1st of the month at 00:00 UTC, and no other source confirms this date. Treat it as 'some time this month'.";
+  } else if (e.date_moved && e.agg_date) {
+    o.date_confirmed = true;
+    o.date_note = `CoinMarketCap shows ${e.agg_date.slice(0, 10)} 00:00 UTC (a placeholder for an unknown day); the date above comes from ${(e.date_src && e.date_src.source || "").includes("card") ? "the project's own documents" : "Tokenomist"}.${e.time_unknown ? " Exact time not published." : ""}`;
+  } else if (e.date_src && e.date_src.status === "confirmed") {
+    o.date_confirmed = true;
+    if (e.date_src.url) o.date_source_url = e.date_src.url;
+  }
   const v = e.verify;
   if (v && (v.docs || v.chain)) {
     const d = v.docs, c = v.chain;
@@ -138,7 +148,7 @@ function shape(e, now, lang, detail) {
     o.recipients_detail = (e.alloc_detail || []).map((a) => ({ name: a.name, value_usd: Math.round(a.usd || 0), kind: a.type }));
     o.fdv_usd = e.fdv == null ? null : Math.round(e.fdv);
     o.already_unlocked_pct = round(e.unlocked_pct, 1);
-    o.data_source = e.source === "project" ? "The project's own documents (our tokenomics card); see primary_source_check" : e.source === "cmc" ? "CoinMarketCap unlock calendar" : e.source ? "DefiLlama emissions" : null;
+    o.data_source = e.source === "project" ? "The project's own documents (our tokenomics card); see primary_source_check" : e.source === "cmc" ? "CoinMarketCap unlock calendar" : e.source === "manual" ? "Checked by hand against the project's schedule (see date_source_url)" : e.source ? "DefiLlama emissions" : null;
     o.add_to_calendar = `${SITE}/unlock/${e.slug}.ics`;
   }
   return o;
