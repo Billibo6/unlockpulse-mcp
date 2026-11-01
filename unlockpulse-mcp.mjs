@@ -9,7 +9,7 @@ const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
 // en — пригласительная ссылка «MCP» канала @unlockpulse (27.10): Telegram считает вступивших по ней
 const TELEGRAM = { en: "https://t.me/+JITtUsgJ2zE5ZjEy", ru: "https://t.me/razloki" };
-const VERSION = "1.9.2";
+const VERSION = "1.9.3";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -117,7 +117,8 @@ function shape(e, now, lang, detail) {
     o.warning = (o.warning ? o.warning + " " : "") + "Exact date not confirmed: CoinMarketCap files unlocks with an unknown day on the 1st of the month at 00:00 UTC, and no other source confirms this date. Treat it as 'some time this month'.";
   } else if (e.date_moved && e.agg_date) {
     o.date_confirmed = true;
-    o.date_note = `CoinMarketCap shows ${e.agg_date.slice(0, 10)} 00:00 UTC (a placeholder for an unknown day); the date above comes from ${(e.date_src && e.date_src.source || "").includes("card") ? "the project's own documents" : "Tokenomist"}.${e.time_unknown ? " Exact time not published." : ""}`;
+    const mid = e.date_src && e.date_src.kind === "midnight";
+    o.date_note = `CoinMarketCap shows ${e.agg_date.slice(0, 16).replace("T", " ")} UTC${mid ? " (a date with no published time of day; the project's schedule puts the unlock a day later)" : " (a placeholder for an unknown day)"}; the date above comes from ${(e.date_src && e.date_src.source || "").includes("card") ? "the project's own documents" : "Tokenomist"}.${e.time_unknown ? " Exact time not published." : ""}`;
   } else if (e.date_src && e.date_src.status === "confirmed") {
     o.date_confirmed = true;
     if (e.date_src.url) o.date_source_url = e.date_src.url;
