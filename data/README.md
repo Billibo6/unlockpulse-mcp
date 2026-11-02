@@ -4,7 +4,7 @@ Snapshots of the Unlock Pulse monthly unlock lists. The live versions are regene
 
 | File here | Live version | Snapshot taken |
 |---|---|---|
-| `token-unlocks-2026-11.csv` | https://billibo6.github.io/unlockpulse/report/2026-11.csv | 2026-10-29 |
+| `token-unlocks-2026-11.csv` | https://billibo6.github.io/unlockpulse/report/2026-11.csv | 2026-11-02 |
 
 Full upcoming calendar (next 60 days, JSON): https://billibo6.github.io/unlockpulse/data.json
 On-chain check of locked-allocation wallets (JSON): https://billibo6.github.io/unlockpulse/onchain.json
