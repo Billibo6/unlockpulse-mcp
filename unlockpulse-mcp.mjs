@@ -9,7 +9,7 @@ const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
 // en — пригласительная ссылка «MCP» канала @unlockpulse (27.10): Telegram считает вступивших по ней
 const TELEGRAM = { en: "https://t.me/+JITtUsgJ2zE5ZjEy", ru: "https://t.me/razloki" };
-const VERSION = "1.9.3";
+const VERSION = "1.9.4";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -462,7 +462,9 @@ export function usageEvents(msgs) {
 const bump = (o, k, cap = 300) => { if (k == null || k === "") return; if (o[k] === undefined && Object.keys(o).length >= cap) k = "_other"; o[k] = (o[k] || 0) + 1; };
 // 1.8.1: free KV tier allows 1000 writes a day; catalog robots connect hundreds of times. Events are buffered per Worker
 // instance and written at most once every 2 minutes (or at 50 events). An evicted instance may lose its last few events.
-const FLUSH_MS = 120000, FLUSH_N = 50;
+// 1.9.4 (02.11): Cloudflare warned at 50 % of the daily write cap (~500 writes/day from robot connects) → connects are
+// flushed every 15 minutes or at 200 events; tool calls are still written at once. Losing a few robot connects is fine.
+const FLUSH_MS = 900000, FLUSH_N = 200;
 // 1.8.2: a fresh instance starts its 2-minute window at load (before, its first event was written at once, and robots
 // waking cold instances all over the world spent one KV write each). Tool calls are still written at once.
 let buf = [], lastFlush = Date.now();
