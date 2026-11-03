@@ -114,5 +114,22 @@ console.log(`\n${pass} passed`);
   assert.ok(!/ДЛЯ ШОРТА|для шорта|short/i.test(JSON.stringify(Object.values(JSON.parse(all).tokens).map((t) => t.finding))), "no trading talk in findings");
   ok("findings carry no trading talk");
 }
+// 1.9.5: recipient_selling_habit. DATA_FILE=path serves a local data.json instead of the site (before it is published).
+{
+  const local = process.env.DATA_FILE;
+  const f = local ? async (url, o) => (String(url).endsWith("/data.json")
+      ? { ok: true, status: 200, json: async () => JSON.parse(fs.readFileSync(local, "utf8")) } : globalThis.fetch(url, o)) : globalThis.fetch;
+  const raw = local ? fs.readFileSync(local, "utf8") : await (await globalThis.fetch("https://billibo6.github.io/unlockpulse/data.json")).text();
+  const withH = JSON.parse(raw).events.filter((e) => e.recipient_habit && Date.parse(e.date) > Date.now());
+  assert.ok(!/0x[0-9a-fA-F]{40}/.test(JSON.stringify(withH.map((e) => e.recipient_habit))), "no addresses in recipient_habit");
+  if (withH.length) {
+    const hm = local ? (await import("./unlockpulse-mcp.mjs?habit")).handleMessage : handleMessage; // fresh module: no cached live data.json
+    const q = await hm({ jsonrpc: "2.0", id: 41, method: "tools/call", params: { name: "get_token_unlocks", arguments: { token: withH[0].sym } } }, f);
+    const u = q.result.structuredContent.unlocks.find((x) => x.recipient_selling_habit);
+    assert.ok(u, "habit passed through"); assert.ok(["usually sells", "usually holds", "mixed"].includes(u.recipient_selling_habit.label));
+    assert.ok(u.recipient_selling_habit.past_unlocks_traced >= 3 && u.recipient_selling_habit.note.includes("not a trading signal"));
+    ok("recipient_selling_habit " + withH[0].sym + ": " + u.recipient_selling_habit.label);
+  } else ok("recipient_selling_habit: not in live data.json yet (skipped)");
+}
 r = await call("get_dataset_info"); s = r.result.structuredContent; assert.equal(r.result.isError, false); assert.equal(s.server_version, VERSION_EXPECTED); assert.ok(s.calendar.upcoming_unlocks >= 0 && s.calendar.window_days === 60); assert.ok(s.thresholds.strong.startsWith("B >= ")); assert.ok(s.cite_as.includes("CC BY 4.0")); ok("get_dataset_info: coverage, thresholds, citation");
 console.log("all passed:", pass);

@@ -31,7 +31,7 @@ Also listed in the official MCP Registry as `io.github.Billibo6/unlockpulse`.
 | Tool | What it returns |
 |---|---|
 | `get_upcoming_unlocks` | Unlocks in the next 1–60 days, rated strong / medium / small, filters by size and futures availability |
-| `get_token_unlocks` | Every scheduled unlock of one token: date, size, USD value, recipients, futures |
+| `get_token_unlocks` | Every scheduled unlock of one token: date, size, USD value, recipients, futures, and for some coins how often recipients of past unlocks sold (reference only, not a signal) |
 | `get_onchain_check` | What the wallets holding locked team, investor and treasury tokens do on-chain: balances, outflows, findings |
 | `get_method_and_track_record` | How the rating works and how prices moved before past unlocks of each strength |
 | `get_dataset_info` | Data freshness, coverage, sources, formula, limitations and how to cite |

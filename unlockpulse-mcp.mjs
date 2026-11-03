@@ -9,7 +9,7 @@ const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
 // en — пригласительная ссылка «MCP» канала @unlockpulse (27.10): Telegram считает вступивших по ней
 const TELEGRAM = { en: "https://t.me/+JITtUsgJ2zE5ZjEy", ru: "https://t.me/razloki" };
-const VERSION = "1.9.4";
+const VERSION = "1.9.5";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -123,6 +123,21 @@ function shape(e, now, lang, detail) {
     o.date_confirmed = true;
     if (e.date_src.url) o.date_source_url = e.date_src.url;
   }
+  const h = e.recipient_habit; // 1.9.5: per-coin recipient selling habit (Ethereum, past unlocks); reference only, not a trading signal
+  if (h && h.label) {
+    o.recipient_selling_habit = {
+      label: h.label, // usually sells | usually holds | mixed
+      past_unlocks_traced: h.past_events,
+      past_unlocks_sold: h.events_sold, // at least 10% sent to exchanges, market makers or DEXes within 7 days
+      median_sent_pct: h.median_sent_pct,
+      main_venue_type: h.main_venue_type,
+      main_venues: h.main_venues || [],
+      last_traced_unlock: h.last_event,
+      chain: h.chain || "ethereum",
+      note: "Reference only, not a trading signal: on our sample (139 unlocks, 27 coins) this habit did not predict price.",
+      method: h.method || SITE + "/method.html#recipient-habit",
+    };
+  }
   const v = e.verify;
   if (v && (v.docs || v.chain)) {
     const d = v.docs, c = v.chain;
@@ -196,7 +211,8 @@ export const TOOLS = [
       "All scheduled unlocks in the next 60 days for one token, with recipients (team, investors, treasury ...), USD value, share of circulating supply, " +
       "futures availability and a link to the token page. Accepts a ticker (ARB), a name (Arbitrum) or a slug (arbitrum). " +
       "Returns found=0 if the token has no unlock in the next 60 days (that is not an error). If the result mentions onchain_check, " +
-      "call get_onchain_check to see what the locked wallets are doing. lang=ru returns Russian page links.",
+      "call get_onchain_check to see what the locked wallets are doing. recipient_selling_habit (when present) says how often recipients of this coin's past unlocks sold " +
+      "within 7 days; it is reference only and did not predict price. lang=ru returns Russian page links.",
     inputSchema: {
       type: "object",
       properties: {
