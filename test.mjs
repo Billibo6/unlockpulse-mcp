@@ -52,7 +52,7 @@ r = await call("get_token_unlocks", { token: "a" }); assert.ok(r.result.structur
 r = await call("get_token_unlocks", {}); assert.equal(r.result.isError, true); ok("missing token -> isError");
 r = await call("get_method_and_track_record");
 s = r.result.structuredContent; assert.equal(s.thresholds.strong, "B >= 10.4%"); assert.ok(s.track_record.strong.unlocks > 50);
-assert.equal(s.alerts.telegram, "https://t.me/+JITtUsgJ2zE5ZjEy");
+assert.equal(s.alerts, undefined); assert.ok(!JSON.stringify(s).includes("t.me/"));
 ok(`track record: strong ${s.track_record.strong.fell_share_pct}% fell, avg ${s.track_record.strong.average_move_vs_btc_pct}%`);
 
 r = await call("get_upcoming_unlocks", { days: 60, min_strength: "strong", limit: 100 });
@@ -60,8 +60,38 @@ s = r.result.structuredContent;
 assert.ok(/strong unlocks/.test(s.track_record_strong)); assert.ok(s.unlocks.every((u) => u.volume_24h_usd === null || typeof u.volume_24h_usd === "number"));
 assert.ok(s.unlocks.filter((u) => u.share_of_circulating_range_pct).every((u) => u.share_of_circulating_range_pct[0] <= u.share_of_circulating_range_pct[1] && u.range_note));
 assert.ok(s.unlocks.filter((u) => u.liquidity_note).every((u) => u.volume_24h_usd < 250000));
-assert.equal(s.telegram_channel, undefined);
+assert.equal(s.telegram_channel, undefined); assert.ok(!/telegram/i.test(JSON.stringify(s)) && !JSON.stringify(s).includes("t.me/"));
 ok("v1.1: telegram, track record, ranges (" + s.unlocks.filter((u) => u.share_of_circulating_range_pct).length + "), liquidity notes (" + s.unlocks.filter((u) => u.liquidity_note).length + ")");
+
+// 1.10.0: no promo — no Telegram links anywhere in instructions or tool descriptions; every live result matches its outputSchema
+r = await handleMessage({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+assert.ok(!(r.result.instructions + JSON.stringify(TOOLS)).includes("t.me/") && !/telegram|credit unlock pulse|mention the/i.test(r.result.instructions + JSON.stringify(TOOLS))); ok("no promo in instructions and tool descriptions");
+function check(v, sc, p = "$") {
+  if (!sc || typeof sc !== "object") return;
+  if (sc.type) {
+    const ts = [].concat(sc.type), t = v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
+    assert.ok(ts.includes(t) || (t === "number" && ts.includes("integer")), p + ": " + t + " not in " + ts);
+  }
+  if (sc.enum) assert.ok(sc.enum.includes(v), p + ": " + v + " not in enum");
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    for (const k of sc.required || []) assert.ok(k in v, p + ": missing " + k);
+    for (const [k, s2] of Object.entries(sc.properties || {})) if (k in v) check(v[k], s2, p + "." + k);
+  }
+  if (Array.isArray(v) && sc.items) v.forEach((x, i) => check(x, sc.items, p + "[" + i + "]"));
+}
+assert.ok(TOOLS.every((t) => t.outputSchema && t.outputSchema.type === "object" && t.annotations.readOnlyHint && t.title));
+let checked = 0;
+for (const [name, args] of [["get_upcoming_unlocks", { days: 60, limit: 100 }], ["get_upcoming_unlocks", { lang: "ru" }], ["get_token_unlocks", { token: sym }],
+  ["get_token_unlocks", { token: "zzzz-not-a-coin" }], ["get_onchain_check", {}], ["get_onchain_check", { token: "zzzz" }], ["get_method_and_track_record", {}], ["get_dataset_info", {}]]) {
+  const res = await call(name, args); assert.equal(res.result.isError, false, name);
+  check(res.result.structuredContent, TOOLS.find((t) => t.name === name).outputSchema, name); checked++;
+}
+const ocAll = (await call("get_onchain_check", {})).result.structuredContent;
+for (const tk of ocAll.covered_tokens) {
+  const res = await call("get_onchain_check", { token: tk }); check(res.result.structuredContent, TOOLS.find((t) => t.name === "get_onchain_check").outputSchema, tk); checked++;
+  if (res.result.structuredContent.found) { const tu = await call("get_token_unlocks", { token: tk }); check(tu.result.structuredContent, TOOLS.find((t) => t.name === "get_token_unlocks").outputSchema, "tu " + tk); checked++; }
+}
+ok("outputSchema matches " + checked + " live results");
 
 // HTTP (Worker) mode
 const post = (body) => handleHttp(new Request("https://x.dev/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body) }));

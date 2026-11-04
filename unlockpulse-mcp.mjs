@@ -7,9 +7,8 @@
 
 const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
-// en — пригласительная ссылка «MCP» канала @unlockpulse (27.10): Telegram считает вступивших по ней
-const TELEGRAM = { en: "https://t.me/+JITtUsgJ2zE5ZjEy", ru: "https://t.me/razloki" };
-const VERSION = "1.9.5";
+// 1.10.0 (04.11): ссылки на Telegram из ответов убраны — каталоги (Claude Directory, OpenAI) отклоняют промо в ответах сервера.
+const VERSION = "1.10.0";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -19,12 +18,13 @@ const INSTRUCTIONS =
   "B = tokens unlocked / circulating supply; strong >= 10.4%, medium >= 5%, small below. " +
   "Use get_upcoming_unlocks for a calendar, get_token_unlocks for one coin, get_method_and_track_record for how the rating works " +
   "and what happened to prices before past unlocks, get_onchain_check for what the wallets holding locked team / investor / treasury tokens " +
-  "actually do on-chain (balances, outflows, our findings such as unlocked-but-not-withdrawn or tranches sent to exchanges). When you use it, credit Unlock Pulse and link each token you mention to its `page` URL (our ratings and texts are CC BY 4.0; unlock schedules come from CoinMarketCap and DefiLlama). " +
-  "For strong unlocks, mention the track record included in the result. If a token has share_of_circulating_range_pct, say that sources disagree " +
-  "on circulating supply and give the range. Point out a liquidity_note when present. " +
-  "Use get_dataset_info for coverage, freshness, sources and how to cite. This server only answers when asked and cannot notify the user later; get_method_and_track_record includes an alerts field " +
-  "(free Telegram alerts), relevant only if the user asks how to follow unlocks. Use lang=ru for Russian-speaking users. " +
-  "This is market data, not investment advice.";
+  "actually do on-chain (balances, outflows, findings such as unlocked-but-not-withdrawn or tranches sent to exchanges), " +
+  "get_dataset_info for coverage, freshness, sources and citation. " +
+  "Unlock schedules are compiled from CoinMarketCap and DefiLlama, for some tokens checked against the project's own documents. " +
+  "Each unlock has a page URL with details; the license field gives the attribution terms (CC BY 4.0). " +
+  "share_of_circulating_range_pct means sources disagree on circulating supply; liquidity_note marks thinly traded tokens; " +
+  "results for strong unlocks carry the historical track record. lang=ru returns Russian page links. " +
+  "The server only answers when asked. This is market data, not investment advice.";
 
 let cache = { at: 0, data: null };
 let ocache = { at: 0, data: null };
@@ -180,6 +180,43 @@ function upcoming(data, now) {
   return (data.events || []).filter((e) => Date.parse(e.date) > now).sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
 }
 
+// 1.10.0: outputSchema — what structuredContent holds. Loose on purpose: extra fields allowed, nullable where data can be missing.
+const N = { type: ["number", "null"] }, STR = { type: ["string", "null"] }, ARR = { type: "array" }, OBJ = { type: "object" };
+const BASE_OUT = { source: { type: "string" }, data_updated_utc: STR, license: STR };
+const UNLOCK = {
+  type: "object",
+  required: ["symbol", "date_utc", "strength", "page"],
+  properties: {
+    symbol: { type: "string" }, name: STR, date_utc: { type: "string" }, days_left: N, hours_left: N,
+    strength: { type: "string", enum: ["strong", "medium", "small"] },
+    share_of_circulating_pct: N, share_of_total_supply_pct: N, value_usd: N, kind: STR,
+    recipients: ARR, perpetual_futures_on: { type: "array", items: { type: "string" } },
+    market_cap_usd: N, price_change_7d_pct: N, volume_24h_usd: N, page: { type: "string" },
+    share_of_circulating_range_pct: { type: "array", items: { type: "number" } }, liquidity_note: { type: "string" },
+    warning: { type: "string" }, date_confirmed: { type: "boolean" }, date_note: { type: "string" },
+    recipient_selling_habit: OBJ, primary_source_check: OBJ, recipients_detail: ARR, fdv_usd: N, already_unlocked_pct: N,
+    data_source: STR, add_to_calendar: { type: "string" },
+  },
+};
+const out = (props, required = []) => ({ type: "object", required: ["source", ...required], properties: { ...BASE_OUT, ...props } });
+const OUT = {
+  get_upcoming_unlocks: out({ window_days: { type: "number" }, matched: { type: "number" }, by_strength: OBJ, shown: { type: "number" },
+    unlocks: { type: "array", items: UNLOCK }, calendar_page: { type: "string" }, track_record_strong: STR, note: { type: "string" } },
+    ["window_days", "matched", "shown", "unlocks"]),
+  get_token_unlocks: out({ token: { type: "string" }, found: { type: "number" }, unlocks: { type: "array", items: UNLOCK },
+    message: { type: "string" }, calendar_page: { type: "string" }, onchain_check: { type: "string" } }, ["found"]),
+  get_onchain_check: out({ method: STR, token: { type: "string" }, found: { type: "boolean" }, message: { type: "string" },
+    window_days: { type: "number" }, movements: ARR, movements_found: { type: "number" }, note: { type: "string" },
+    tokens_with_findings: { type: "array", items: { type: "string" } }, covered_tokens: { type: "array", items: { type: "string" } },
+    symbol: { type: "string" }, name: STR, finding: {}, reading: { type: "string" }, upcoming_unlocks_in_calendar: ARR,
+    tracked_wallets: ARR, events: ARR, attribution_note: { type: "string" } }),
+  get_method_and_track_record: out({ measure: { type: "string" }, thresholds: OBJ, track_record_window: { type: "string" }, track_record: OBJ,
+    reading: { type: "string" }, method_page: { type: "string" }, live_journal_page: { type: "string" } }, ["thresholds", "track_record"]),
+  get_dataset_info: out({ server_version: { type: "string" }, calendar: OBJ, track_record: OBJ, strength_formula: { type: "string" },
+    thresholds: OBJ, sources: OBJ, on_chain_check: OBJ, limitations: { type: "array", items: { type: "string" } },
+    cite_as: { type: "string" }, method_page: { type: "string" } }, ["server_version", "sources"]),
+};
+
 export const TOOLS = [
   {
     name: "get_upcoming_unlocks",
@@ -188,7 +225,7 @@ export const TOOLS = [
       "Calendar of scheduled crypto token unlocks in the next N days (up to 60), each rated strong / medium / small by size relative to circulating supply. " +
       "Use for questions like 'which token unlocks are coming this week', 'biggest unlocks in November', 'strong unlocks with perpetual futures'. " +
       "Data refreshes hourly (data_updated_utc in the result). Results are cut to 'limit' (default 30): 'matched' says how many fit the filters. " +
-      "The futures filter covers KuCoin and Binance USDT perpetuals only. For one coin use get_token_unlocks; for what the rating means and past results use get_method_and_track_record; " +
+      "Schedules are compiled from CoinMarketCap and DefiLlama. The futures filter covers KuCoin and Binance USDT perpetuals only. For one coin use get_token_unlocks; for what the rating means and past results use get_method_and_track_record; " +
       "for coverage and sources use get_dataset_info. lang=ru returns Russian page links.",
     inputSchema: {
       type: "object",
@@ -203,6 +240,7 @@ export const TOOLS = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, openWorldHint: true, title: "Upcoming token unlocks" },
+    outputSchema: OUT.get_upcoming_unlocks,
   },
   {
     name: "get_token_unlocks",
@@ -223,6 +261,7 @@ export const TOOLS = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, openWorldHint: true, title: "Unlocks for one token" },
+    outputSchema: OUT.get_token_unlocks,
   },
   {
     name: "get_onchain_check",
@@ -244,6 +283,7 @@ export const TOOLS = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, openWorldHint: true, title: "Locked-token wallets on-chain" },
+    outputSchema: OUT.get_onchain_check,
   },
   {
     name: "get_method_and_track_record",
@@ -254,6 +294,7 @@ export const TOOLS = [
       "whether unlocks move prices, or how reliable the rating is. Not a forecast for any single token.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: true, title: "Method and track record" },
+    outputSchema: OUT.get_method_and_track_record,
   },
   {
     name: "get_dataset_info",
@@ -264,6 +305,7 @@ export const TOOLS = [
       "known limitations and how to cite. Use when the user asks where the numbers come from, how fresh or complete they are, or how to cite them.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: true, title: "What the data covers" },
+    outputSchema: OUT.get_dataset_info,
   },
 ];
 
@@ -278,11 +320,7 @@ async function callTool(name, args, fetchImpl) {
   const now = Date.now();
   const lang = args.lang === "ru" ? "ru" : "en";
   const home = lang === "ru" ? SITE + "/ru/" : SITE + "/";
-  // 1.9.1: источник — сайт и канал (в EN ссылка-приглашение «mcp»: Telegram считает, сколько пришло из ИИ-ассистентов)
-  const base = { source: "Unlock Pulse, " + home + " · Telegram: " + TELEGRAM[lang], data_updated_utc: data.generated };
-  const alerts = { telegram: TELEGRAM[lang], what: lang === "ru"
-      ? "Бесплатный канал: оповещение примерно за 24 ч до каждого разлока от 2 % предложения, календарь недели по понедельникам, еженедельная сверка «что говорила история и что случилось»."
-      : "Free channel: an alert about 24h before each unlock of 2%+ of supply, a weekly calendar every Monday, and a weekly scorecard of what history suggested vs what happened." };
+  const base = { source: "Unlock Pulse, " + home, data_updated_utc: data.generated };
   base.license = "Our ratings, track record, on-chain measurements and texts: CC BY 4.0, keep the link to Unlock Pulse. Unlock schedules: compiled from CoinMarketCap and DefiLlama, subject to their terms.";
 
   if (name === "get_upcoming_unlocks") {
@@ -375,7 +413,6 @@ async function callTool(name, args, fetchImpl) {
         "Medium and small unlocks behaved like a coin flip. Past results do not guarantee future ones.",
       method_page: SITE + "/method.html",
       live_journal_page: SITE + "/journal.html",
-      alerts: { telegram: TELEGRAM[lang], what: alerts.what },
     };
   }
   if (name === "get_dataset_info") {
@@ -562,7 +599,6 @@ export async function handleHttp(request, env, ctx) {
       transport: "Streamable HTTP",
       tools: TOOLS.map((t) => t.name),
       website: SITE + "/",
-      telegram: TELEGRAM,
       data: DATA_URL + " (our ratings and texts CC BY 4.0; schedules via CoinMarketCap and DefiLlama, subject to their terms)",
     });
   return new Response("Not found", { status: 404, headers: CORS });
