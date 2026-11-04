@@ -50,6 +50,8 @@ npx skills add Billibo6/unlockpulse-mcp
 
 Monthly unlock lists as CSV (snapshots; live versions update hourly) are in [`data/`](data/). Open data: CC BY 4.0.
 
+Research dataset (unlock ratings, 7-day event study against Bitcoin around 304 past unlocks, date checks, schedule changes, on-chain checks): [doi.org/10.5281/zenodo.23949644](https://doi.org/10.5281/zenodo.23949644) on Zenodo, CC BY 4.0.
+
 ## Example questions
 
 - "Which strong token unlocks are coming in the next two weeks?"

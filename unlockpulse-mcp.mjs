@@ -8,7 +8,7 @@
 const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
 // 1.10.0 (04.11): ссылки на Telegram из ответов убраны — каталоги (Claude Directory, OpenAI) отклоняют промо в ответах сервера.
-const VERSION = "1.10.0";
+const VERSION = "1.10.1";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -214,7 +214,7 @@ const OUT = {
     reading: { type: "string" }, method_page: { type: "string" }, live_journal_page: { type: "string" } }, ["thresholds", "track_record"]),
   get_dataset_info: out({ server_version: { type: "string" }, calendar: OBJ, track_record: OBJ, strength_formula: { type: "string" },
     thresholds: OBJ, sources: OBJ, on_chain_check: OBJ, limitations: { type: "array", items: { type: "string" } },
-    cite_as: { type: "string" }, method_page: { type: "string" } }, ["server_version", "sources"]),
+    cite_as: { type: "string" }, open_dataset: OBJ, method_page: { type: "string" } }, ["server_version", "sources"]),
 };
 
 export const TOOLS = [
@@ -446,6 +446,9 @@ async function callTool(name, args, fetchImpl) {
         "The track record describes averages over many past unlocks, not a forecast for one token.",
       ],
       cite_as: "Unlock Pulse (" + SITE + "/), CC BY 4.0",
+      open_dataset: { title: "Unlock Pulse open dataset v1", version: "1.0.0", doi: "10.5281/zenodo.23949644",
+        url: "https://doi.org/10.5281/zenodo.23949644", all_versions_doi: "10.5281/zenodo.23949643", license: "CC BY 4.0",
+        contents: "CSV files: unlock ratings, 7-day event study vs Bitcoin around 304 past unlocks, date checks, schedule changes, recipient habits, on-chain checks" },
       method_page: SITE + "/method.html",
     };
   }

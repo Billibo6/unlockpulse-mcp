@@ -1,13 +1,11 @@
 {
   "name": "unlockpulse-mcp",
-  "version": "1.10.0",
-  "description": "Unlock Pulse MCP server: token unlock calendar for AI assistants (Claude, ChatGPT, Cursor)",
+  "version": "1.10.1",
+  "description": "Unlock Pulse MCP server: token unlock calendar for AI assistants",
   "type": "module",
   "bin": { "unlockpulse-mcp": "unlockpulse-mcp.mjs" },
   "main": "unlockpulse-mcp.mjs",
   "license": "MIT",
   "engines": { "node": ">=18" },
-  "keywords": ["mcp", "model-context-protocol", "crypto", "token-unlocks", "vesting", "tokenomics"],
-  "homepage": "https://billibo6.github.io/unlockpulse/ai.html",
-  "scripts": { "start": "node unlockpulse-mcp.mjs", "test": "node test.mjs" }
+  "scripts": { "test": "node test.mjs", "dev": "npx -y wrangler@4.151.3 dev", "deploy": "npx -y wrangler@4.151.3 deploy" }
 }

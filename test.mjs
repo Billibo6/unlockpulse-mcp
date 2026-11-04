@@ -161,5 +161,5 @@ console.log(`\n${pass} passed`);
     ok("recipient_selling_habit " + withH[0].sym + ": " + u.recipient_selling_habit.label);
   } else ok("recipient_selling_habit: not in live data.json yet (skipped)");
 }
-r = await call("get_dataset_info"); s = r.result.structuredContent; assert.equal(r.result.isError, false); assert.equal(s.server_version, VERSION_EXPECTED); assert.ok(s.calendar.upcoming_unlocks >= 0 && s.calendar.window_days === 60); assert.ok(s.thresholds.strong.startsWith("B >= ")); assert.ok(s.cite_as.includes("CC BY 4.0")); ok("get_dataset_info: coverage, thresholds, citation");
+r = await call("get_dataset_info"); s = r.result.structuredContent; assert.equal(r.result.isError, false); assert.equal(s.server_version, VERSION_EXPECTED); assert.ok(s.calendar.upcoming_unlocks >= 0 && s.calendar.window_days === 60); assert.ok(s.thresholds.strong.startsWith("B >= ")); assert.ok(s.cite_as.includes("CC BY 4.0")); assert.equal(s.open_dataset.doi, "10.5281/zenodo.23949644"); ok("get_dataset_info: coverage, thresholds, citation, Zenodo DOI");
 console.log("all passed:", pass);
