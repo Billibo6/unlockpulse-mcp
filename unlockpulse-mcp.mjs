@@ -8,7 +8,7 @@
 const SITE = "https://billibo6.github.io/unlockpulse";
 const DATA_URL = SITE + "/data.json";
 // 1.10.0 (04.11): ссылки на Telegram из ответов убраны — каталоги (Claude Directory, OpenAI) отклоняют промо в ответах сервера.
-const VERSION = "1.10.1";
+const VERSION = "1.10.2";
 const ONCHAIN_URL = SITE + "/onchain.json";
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const TTL_MS = 10 * 60 * 1000;
@@ -515,18 +515,24 @@ export function usageEvents(msgs) {
   }
   return ev;
 }
-const bump = (o, k, cap = 300) => { if (k == null || k === "") return; if (o[k] === undefined && Object.keys(o).length >= cap) k = "_other"; o[k] = (o[k] || 0) + 1; };
+const bump = (o, k, n = 1, cap = 300) => { if (k == null || k === "") return; if (o[k] === undefined && Object.keys(o).length >= cap) k = "_other"; o[k] = (o[k] || 0) + n; };
 // 1.8.1: free KV tier allows 1000 writes a day; catalog robots connect hundreds of times. Events are buffered per Worker
 // instance and written at most once every 2 minutes (or at 50 events). An evicted instance may lose its last few events.
 // 1.9.4 (02.11): Cloudflare warned at 50 % of the daily write cap (~500 writes/day from robot connects) → connects are
 // flushed every 15 minutes or at 200 events; tool calls are still written at once. Losing a few robot connects is fine.
 const FLUSH_MS = 900000, FLUSH_N = 200;
+// 1.10.2 (05.11): still ~500 writes/day (robots hit many short-lived instances, each flushing its own buffer) → Cloudflare
+// warned at 50 % again. Robot connects are now sampled: 1 in INIT_SAMPLE is kept with weight INIT_SAMPLE, so daily
+// connect counts stay right on average and writes drop ~10×. Tool calls are never sampled.
+export const INIT_SAMPLE = 10;
 // 1.8.2: a fresh instance starts its 2-minute window at load (before, its first event was written at once, and robots
 // waking cold instances all over the world spent one KV write each). Tool calls are still written at once.
 let buf = [], lastFlush = Date.now();
 async function record(env, ev, country) {
   if (!env || !env.STATS || !ev.length) return;
-  for (const e of ev) buf.push({ ...e, country, day: new Date().toISOString().slice(0, 10) });
+  ev = ev.filter((e) => e.k !== "init" || Math.random() < 1 / INIT_SAMPLE);
+  if (!ev.length) return;
+  for (const e of ev) buf.push({ ...e, w: e.k === "init" ? INIT_SAMPLE : 1, country, day: new Date().toISOString().slice(0, 10) });
   if (!ev.some((e) => e.k === "call") && Date.now() - lastFlush < FLUSH_MS && buf.length < FLUSH_N) return;
   const batch = buf; buf = []; lastFlush = Date.now();
   const byDay = {};
@@ -535,7 +541,7 @@ async function record(env, ev, country) {
     const key = "d:" + day;
     const d = (await env.STATS.get(key, "json")) || { init: 0, calls: 0, tools: {}, tokens: {}, clients: {}, countries: {}, langs: {}, filters: {} };
     for (const e of list) {
-      if (e.k === "init") { d.init++; bump(d.clients, e.client); bump(d.countries, e.country); }
+      if (e.k === "init") { d.init += e.w; bump(d.clients, e.client, e.w); bump(d.countries, e.country, e.w); }
       else { d.calls++; bump(d.tools, e.tool); bump(d.tokens, e.token); bump(d.langs, e.lang); bump(d.filters, e.filt); }
     }
     await env.STATS.put(key, JSON.stringify(d), { expirationTtl: 400 * 86400 });
@@ -549,7 +555,7 @@ async function stats(env) {
     const v = await env.STATS.get(k, "json");
     if (v) days[k.slice(2)] = v;
   }
-  return { about: "Unlock Pulse MCP: anonymous daily usage (UTC), last 30 days. No IPs stored.", days };
+  return { about: "Unlock Pulse MCP: anonymous daily usage (UTC), last 30 days. No IPs stored. Since 2026-11-05 connects (init, clients, countries) are sampled 1 in " + INIT_SAMPLE + " and scaled, so they are estimates; tool calls are exact.", days };
 }
 
 // ---- remote mode: Cloudflare Worker ----
