@@ -20,7 +20,7 @@ r = await handleMessage({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
 assert.equal(r.result.protocolVersion, "2025-06-18"); ok("initialize falls back to latest for unknown version");
 assert.equal(await handleMessage({ jsonrpc: "2.0", method: "notifications/initialized" }), null); ok("notification gets no answer");
 r = await handleMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-assert.deepEqual(r.result.tools.map((t) => t.name), ["get_upcoming_unlocks", "get_token_unlocks", "get_onchain_check", "get_method_and_track_record", "get_dataset_info"]); ok("tools/list");
+assert.deepEqual(r.result.tools.map((t) => t.name), ["get_upcoming_unlocks", "get_token_unlocks", "get_onchain_check", "get_disputed_unlocks", "check_portfolio", "get_method_and_track_record", "get_dataset_info"]); ok("tools/list");
 r = await handleMessage({ jsonrpc: "2.0", id: 3, method: "nope" }); assert.equal(r.error.code, -32601); ok("unknown method -> -32601");
 r = await call("nope"); assert.equal(r.error.code, -32602); ok("unknown tool -> -32602");
 r = await handleMessage({ id: 4, method: "x" }); assert.equal(r.error.code, -32600); ok("missing jsonrpc -> -32600");
@@ -42,7 +42,8 @@ ok("strong + futures + size sort + limit: " + s.unlocks.map((u) => u.symbol + " 
 r = await call("get_upcoming_unlocks", { days: 999, limit: -3, lang: "ru" });
 s = r.result.structuredContent; assert.equal(s.window_days, 60); assert.equal(s.shown, Math.min(1, s.matched)); assert.ok(s.unlocks[0].page.includes("/ru/unlock/"));
 assert.equal(s.telegram_channel, undefined); assert.equal(s.alerts, undefined);
-ok("bad numbers are clamped, ru links, ru telegram");
+assert.ok(/days=999 is outside 1-60; 60 was used/.test(s.limits_note) && /limit=-3/.test(s.limits_note));
+ok("bad numbers are clamped and limits_note says so, ru links, ru telegram");
 const sym = s.unlocks[0].symbol;
 r = await call("get_token_unlocks", { token: "$" + sym.toLowerCase() });
 s = r.result.structuredContent; assert.ok(s.found >= 1 && s.unlocks[0].symbol === sym && Array.isArray(s.unlocks[0].recipients_detail) && s.unlocks[0].add_to_calendar.endsWith(".ics"));
@@ -82,7 +83,9 @@ function check(v, sc, p = "$") {
 assert.ok(TOOLS.every((t) => t.outputSchema && t.outputSchema.type === "object" && t.annotations.readOnlyHint && t.title));
 let checked = 0;
 for (const [name, args] of [["get_upcoming_unlocks", { days: 60, limit: 100 }], ["get_upcoming_unlocks", { lang: "ru" }], ["get_token_unlocks", { token: sym }],
-  ["get_token_unlocks", { token: "zzzz-not-a-coin" }], ["get_onchain_check", {}], ["get_onchain_check", { token: "zzzz" }], ["get_method_and_track_record", {}], ["get_dataset_info", {}]]) {
+  ["get_token_unlocks", { token: "zzzz-not-a-coin" }], ["get_onchain_check", {}], ["get_onchain_check", { token: "zzzz" }], ["get_upcoming_unlocks", { days: 60, limit: 100, detail: "brief" }], ["get_token_unlocks", { token: "bitcoin" }],
+  ["get_disputed_unlocks", {}], ["get_disputed_unlocks", { token: "zzzz" }], ["get_disputed_unlocks", { reason: "date_differs", days: 999, lang: "ru" }],
+  ["check_portfolio", { tokens: ["zzzz", sym, "bitcoin", "sol"] }], ["get_method_and_track_record", {}], ["get_dataset_info", {}]]) {
   const res = await call(name, args); assert.equal(res.result.isError, false, name);
   check(res.result.structuredContent, TOOLS.find((t) => t.name === name).outputSchema, name); checked++;
 }
@@ -162,4 +165,131 @@ console.log(`\n${pass} passed`);
   } else ok("recipient_selling_habit: not in live data.json yet (skipped)");
 }
 r = await call("get_dataset_info"); s = r.result.structuredContent; assert.equal(r.result.isError, false); assert.equal(s.server_version, VERSION_EXPECTED); assert.ok(s.calendar.upcoming_unlocks >= 0 && s.calendar.window_days === 60); assert.ok(s.thresholds.strong.startsWith("B >= ")); assert.ok(s.cite_as.includes("CC BY 4.0")); assert.equal(s.open_dataset.doi, "10.5281/zenodo.23949644"); ok("get_dataset_info: coverage, thresholds, citation, Zenodo DOI");
+
+// ---- 1.11.0 ----
+// Fixed data so that the cases do not depend on what is in the live calendar today. DATA_FILE / ONCHAIN_FILE are not used here.
+{
+  const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 19) + "+00:00";
+  const E = (o) => ({ pct_total: 1, B: 0.02, usd: 1e6, type: "cliff", strength: "small", alloc: ["Team"], alloc_detail: [], mcap: 5e7, vol24: 9e6, chg7d: 0, source: "cmc", ...o });
+  const fake = { generated: "2026-11-17T00:00:00+00:00", method: { strong: 0.104, medium: 0.05, history: { strong: { n: 100, down: 78, down_share: 0.78, avg_move: -7.3 } } }, events: [
+    E({ sym: "BOB", name: "BOB (Build on Bitcoin)", slug: "bob", date: day(3), B: 0.6058, pct_total: 13.448, strength: "strong" }),
+    E({ sym: "SOLV", name: "Solv Protocol", slug: "solv-protocol", date: day(5) }),
+    E({ sym: "LAYER", name: "Solayer", slug: "solayer", date: day(40) }),
+    E({ sym: "ELSA", name: "HeyElsa", slug: "elsa", date: day(4), B: 1.0793, pct_total: 27.592, strength: "strong", kucoin: true,
+      verify: { docs: { match: "amount_differs", doc_date: day(4).slice(0, 10), doc_pct_total: 0.667, confidence: "stated by the project", sources: [{ type: "white paper", url: "https://example.org/wp" }] } } }),
+    E({ sym: "MBG", name: "MultiBank Group", slug: "mbg", date: day(6), verify: { docs: { match: "date_differs", doc_date: "2027-01-22", doc_pct_total: 7.5, sources: [] } } }),
+    E({ sym: "OKK", name: "Okay Coin", slug: "okay-coin", date: day(7), verify: { docs: { match: "match", doc_date: day(7).slice(0, 10), doc_pct_total: 1, sources: [] } } }),
+  ] };
+  const fakeOc = { generated: "2026-11-17T00:00:00+00:00", license: "CC BY 4.0", method: "m", recent_events_30d: [], tokens: {
+    ELSA: { symbol: "ELSA", name: "HeyElsa (Elsa AI)" }, LDO: { symbol: "LDO", name: "Lido DAO" } } };
+  const f = async (url) => ({ ok: true, status: 200, json: async () => (String(url).endsWith("/onchain.json") ? fakeOc : fake) });
+  const { handleMessage: hm, TOOLS: T2, usageEvents } = await import("./unlockpulse-mcp.mjs?v1110"); // fresh module: empty cache
+  const c = async (name, args = {}) => (await hm({ jsonrpc: "2.0", id: 77, method: "tools/call", params: { name, arguments: args } }, f)).result;
+  const schema = (n) => T2.find((t) => t.name === n).outputSchema;
+  let q, o;
+
+  // (1) exact matching
+  q = await c("get_token_unlocks", { token: "bitcoin" }); o = q.structuredContent; check(o, schema("get_token_unlocks"), "bitcoin");
+  assert.equal(o.found, 0); assert.equal(o.coverage, "unknown_token"); assert.equal(o.unlocks, undefined); assert.equal(o.matched_by, null);
+  assert.ok(o.did_you_mean.some((d) => d.symbol === "BOB")); assert.ok(/not evidence/.test(o.message));
+  ok("'bitcoin' does not return BOB as an unlock (only as did_you_mean)");
+  q = await c("get_token_unlocks", { token: "sol" }); o = q.structuredContent;
+  assert.equal(o.found, 0); assert.equal(o.coverage, "unknown_token"); assert.equal(o.unlocks, undefined);
+  assert.deepEqual(o.did_you_mean.map((d) => d.symbol).sort(), ["LAYER", "SOLV"]); ok("'sol' does not return SOLV / Solayer (only did_you_mean)");
+  q = await c("get_token_unlocks", { token: "$solv" }); o = q.structuredContent; assert.equal(o.found, 1); assert.equal(o.matched_by, "symbol"); assert.equal(o.coverage, "in_calendar"); assert.equal(o.symbol, "SOLV");
+  q = await c("get_token_unlocks", { token: "Solv-Protocol" }); assert.equal(q.structuredContent.matched_by, "slug");
+  q = await c("get_token_unlocks", { token: "solayer" }); assert.equal(q.structuredContent.symbol, "LAYER");
+  q = await c("get_token_unlocks", { token: "Build on Bitcoin" }); o = q.structuredContent; assert.equal(o.symbol, "BOB"); assert.equal(o.matched_by, "name");
+  ok("exact ticker / slug / name (incl. the bracketed name) still match, matched_by is set");
+
+  // (2) coverage
+  q = await c("get_token_unlocks", { token: "ZZZQQQ" }); o = q.structuredContent; assert.equal(o.coverage, "unknown_token"); assert.equal(o.found, 0); assert.equal(o.did_you_mean, undefined);
+  ok("made-up ticker -> coverage unknown_token");
+  q = await c("get_token_unlocks", { token: "ldo" }); o = q.structuredContent; check(o, schema("get_token_unlocks"), "ldo");
+  assert.equal(o.coverage, "known_no_unlock"); assert.equal(o.found, 0); assert.equal(o.symbol, "LDO"); assert.ok(/get_onchain_check/.test(o.onchain_check));
+  q = await c("get_token_unlocks", { token: "lido dao" }); assert.equal(q.structuredContent.coverage, "known_no_unlock");
+  ok("known token without an unlock -> coverage known_no_unlock (differs from unknown_token)");
+
+  // (3) disputed
+  q = await c("get_token_unlocks", { token: "ELSA" }); o = q.structuredContent; let u = o.unlocks[0]; check(o, schema("get_token_unlocks"), "elsa");
+  assert.equal(u.disputed, true); assert.equal(u.dispute_reason, "amount_differs"); assert.ok(u.dispute_summary.includes("27.592%") && u.dispute_summary.includes("0.667%"));
+  assert.equal(u.share_of_circulating_pct, 107.93); assert.equal(u.strength, "strong"); // old fields unchanged
+  assert.equal(u.share_of_circulating_pct_by_documents, 2.61); assert.equal(u.strength_by_documents, "small"); assert.equal(u.primary_source_check.project_documents, "amount_differs");
+  ok("ELSA -> disputed=true on the top level: " + u.dispute_summary);
+  q = await c("get_token_unlocks", { token: "OKK" }); assert.equal(q.structuredContent.unlocks[0].disputed, undefined);
+  q = await c("get_token_unlocks", { token: "SOLV" }); assert.equal(q.structuredContent.unlocks[0].disputed, undefined); ok("matching and unchecked unlocks carry no disputed flag");
+  q = await c("get_disputed_unlocks"); o = q.structuredContent; check(o, schema("get_disputed_unlocks"), "disputed");
+  assert.equal(q.isError, false); assert.equal(o.matched, 2); assert.equal(o.checked_against_documents, 3); assert.deepEqual(o.by_reason, { amount_differs: 1, date_differs: 1 });
+  assert.deepEqual(o.disputed.map((d) => d.symbol), ["ELSA", "MBG"]); assert.equal(o.disputed[0].calendar.share_of_circulating_pct, 107.93);
+  assert.equal(o.disputed[0].project_documents.share_of_total_supply_pct, 0.667); assert.equal(o.disputed[0].project_documents.strength, "small");
+  assert.equal(o.disputed[0].project_documents.sources[0].url, "https://example.org/wp"); assert.equal(o.disputed[1].project_documents.date, "2027-01-22");
+  assert.ok(o.disputed_page.endsWith("/unlockpulse/disputed.html"));
+  q = await c("get_disputed_unlocks", { reason: "date_differs" }); assert.deepEqual(q.structuredContent.disputed.map((d) => d.symbol), ["MBG"]);
+  q = await c("get_disputed_unlocks", { token: "elsa", lang: "ru" }); o = q.structuredContent; assert.equal(o.matched, 1); assert.equal(o.coverage, "in_calendar"); assert.ok(o.disputed[0].page.includes("/ru/unlock/")); assert.ok(o.disputed_page.includes("/ru/disputed.html"));
+  q = await c("get_disputed_unlocks", { token: "bitcoin" }); o = q.structuredContent; assert.equal(o.matched, 0); assert.equal(o.coverage, "unknown_token");
+  q = await c("get_disputed_unlocks", { days: 5 }); assert.deepEqual(q.structuredContent.disputed.map((d) => d.symbol), ["ELSA"]);
+  ok("get_disputed_unlocks: both versions side by side, reason / token / days filters");
+
+  // (4) validation, detail, clamping
+  for (const [n, a, re] of [["get_upcoming_unlocks", { date: "2026-12-01" }, /Unknown parameter 'date'.*Allowed parameters: days, min_strength/],
+    ["get_upcoming_unlocks", { min_strength: "huge" }, /'min_strength' must be one of: strong, medium, small/], ["get_upcoming_unlocks", { detail: "tiny" }, /'detail' must be one of: brief, full/],
+    ["get_upcoming_unlocks", { days: "soon" }, /'days' must be a number/], ["get_token_unlocks", { token: "ELSA", lang: "de" }, /'lang' must be one of: en, ru/],
+    ["get_method_and_track_record", { token: "ELSA" }, /Unknown parameter 'token'.*Allowed parameters: none/], ["get_disputed_unlocks", { reason: "size" }, /'reason' must be one of/],
+    ["check_portfolio", {}, /'tokens' is required/], ["check_portfolio", { tokens: [] }, /'tokens' is required/], ["check_portfolio", { tokens: ["A"], amounts: [1] }, /Unknown parameter 'amounts'/],
+    ["check_portfolio", { tokens: Array.from({ length: 51 }, (_, i) => "T" + i) }, /Too many tokens: 51/], ["check_portfolio", { tokens: [{ a: 1 }] }, /strings only/]]) {
+    q = await c(n, a); assert.equal(q.isError, true, n + " " + JSON.stringify(a)); assert.ok(re.test(q.content[0].text), q.content[0].text); assert.equal(q.structuredContent, undefined);
+  }
+  ok("unknown parameters, wrong enum values and wrong types -> isError with the allowed values");
+  q = await c("get_upcoming_unlocks", { days: null, min_strength: "", lang: "en" }); assert.equal(q.isError, false); assert.equal(q.structuredContent.limits_note, undefined); ok("null / empty optional parameters are treated as absent");
+  q = await c("get_upcoming_unlocks", { days: 999 }); o = q.structuredContent; assert.equal(o.window_days, 60); assert.ok(o.limits_note.includes("days=999 is outside 1-60; 60 was used. The calendar holds only the next 60 days."));
+  ok("days cut to 60 is said out loud: " + o.limits_note);
+  const full = (await c("get_upcoming_unlocks", { days: 60 })), br = (await c("get_upcoming_unlocks", { days: 60, detail: "brief" }));
+  o = br.structuredContent; check(o, schema("get_upcoming_unlocks"), "brief"); assert.equal(o.detail, "brief"); assert.equal(full.structuredContent.detail, "full"); assert.equal(o.matched, 6); assert.equal(o.disputed_in_result, 2);
+  u = o.unlocks.find((x) => x.symbol === "ELSA"); assert.equal(u.disputed, true); assert.ok(u.dispute_summary && u.page && u.recipients === undefined && u.market_cap_usd === undefined && u.primary_source_check === undefined);
+  u = full.structuredContent.unlocks.find((x) => x.symbol === "ELSA");
+  for (const k of ["symbol", "name", "date_utc", "days_left", "hours_left", "strength", "share_of_circulating_pct", "share_of_total_supply_pct", "value_usd", "kind", "recipients", "perpetual_futures_on", "market_cap_usd", "price_change_7d_pct", "volume_24h_usd", "page", "primary_source_check"]) assert.ok(k in u, "full keeps " + k);
+  assert.equal(u.disputed, true); assert.ok(br.content[0].text.length < full.content[0].text.length * 0.75); assert.ok(!full.content[0].text.includes("\n "));
+  ok("detail=brief is compact (" + br.content[0].text.length + " vs " + full.content[0].text.length + " chars), detail=full (default) keeps every old field");
+
+  // (5) check_portfolio
+  q = await c("check_portfolio", { tokens: ["elsa", "$SOLV", "Solayer", "LDO", "bitcoin", "sol", "ZZZQQQ", "ELSA", "HeyElsa"], days: 30 }); o = q.structuredContent; check(o, schema("check_portfolio"), "portfolio");
+  assert.equal(q.isError, false); assert.equal(o.requested, 8); assert.deepEqual(o.summary, { with_unlocks: 2, without_unlocks: 2, unknown: 3 });
+  assert.deepEqual(o.with_unlocks.map((x) => x.symbol), ["ELSA", "SOLV"]); assert.equal(o.with_unlocks[0].next_unlock.disputed, true); assert.equal(o.with_unlocks[1].matched_by, "symbol");
+  assert.deepEqual(o.without_unlocks.map((x) => x.symbol), ["LAYER", "LDO"]); assert.ok(o.without_unlocks[0].next_unlock_after_window_utc); assert.equal(o.without_unlocks[1].next_unlock_after_window_utc, undefined);
+  assert.deepEqual(o.unknown.map((x) => x.input), ["bitcoin", "sol", "ZZZQQQ"]); assert.ok(o.unknown[0].did_you_mean.some((d) => d.symbol === "BOB")); assert.equal(o.unknown[2].did_you_mean, undefined);
+  assert.equal(o.portfolio_page, "https://billibo6.github.io/unlockpulse/tools/my-coins.html?coins=ELSA,SOLV,LAYER,LDO,BITCOIN,SOL,ZZZQQQ"); assert.ok(/strong unlocks/.test(o.track_record_strong));
+  ok("check_portfolio: with unlocks " + o.with_unlocks.map((x) => x.symbol) + "; without " + o.without_unlocks.map((x) => x.symbol) + "; unknown " + o.unknown.map((x) => x.input));
+  q = await c("check_portfolio", { tokens: "ELSA, SOLV; LDO", days: 60, min_strength: "strong", lang: "ru" }); o = q.structuredContent;
+  assert.deepEqual(o.with_unlocks.map((x) => x.symbol), ["ELSA"]); assert.deepEqual(o.without_unlocks.map((x) => x.symbol), ["SOLV", "LDO"]); assert.ok(o.portfolio_page.includes("/ru/tools/my-coins.html?coins=ELSA,SOLV,LDO"));
+  ok("check_portfolio: comma-separated string tolerated, min_strength, ru link");
+
+  // (7) texts: no promo, no calls to action, version
+  const init = (await hm({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }, f)).result;
+  assert.equal(init.serverInfo.version, "1.11.0"); assert.ok(init.instructions.includes("check_portfolio") && init.instructions.includes("get_disputed_unlocks") && init.instructions.includes("unknown_token"));
+  const texts = init.instructions + JSON.stringify(T2.map((t) => [t.description, t.title, t.inputSchema]));
+  assert.ok(!/t\.me\/|telegram|subscribe|sign up|best |leading|credit unlock pulse|mention the|visit our|follow us|always use this/i.test(texts), "no promo or calls to action");
+  assert.ok(T2.every((t) => t.inputSchema.additionalProperties === false && t.annotations.readOnlyHint === true && t.description.length < 2000));
+  ok("instructions and descriptions: new tools named, no promo wording, version 1.11.0");
+  // usage counter never records the coin list given to check_portfolio
+  const ue = usageEvents([{ method: "tools/call", params: { name: "check_portfolio", arguments: { tokens: ["ELSA", "SOLV"] } } }, { method: "tools/call", params: { name: "get_token_unlocks", arguments: { token: ["x"] } } }]);
+  assert.equal(ue[0].tool, "check_portfolio"); assert.equal(ue[0].token, null); assert.ok(!JSON.stringify(ue).includes("SOLV")); assert.equal(ue[1].token, null); ok("usage counter does not store portfolio lists");
+}
+// live data: the same rules on today's calendar
+r = await call("get_token_unlocks", { token: "bitcoin" }); s = r.result.structuredContent; assert.equal(s.found, 0); assert.equal(s.coverage, "unknown_token"); assert.equal(s.unlocks, undefined);
+r = await call("get_token_unlocks", { token: "sol" }); s = r.result.structuredContent; assert.equal(s.found, 0); assert.equal(s.unlocks, undefined);
+const dymSol = JSON.stringify((s.did_you_mean || []).map((d) => d.symbol));
+r = await call("get_token_unlocks", { token: "zzzqqq" }); assert.equal(r.result.structuredContent.coverage, "unknown_token");
+ok("live: 'bitcoin' / 'sol' return no unlocks, made-up ticker is unknown_token; did_you_mean for sol: " + dymSol);
+r = await call("get_disputed_unlocks", {}); s = r.result.structuredContent; assert.equal(r.result.isError, false);
+assert.ok(s.disputed.every((d) => d.summary && d.calendar && d.project_documents && d.page.startsWith("https://billibo6.github.io/unlockpulse/unlock/")));
+ok("live get_disputed_unlocks: " + s.matched + " of " + s.checked_against_documents + " checked: " + s.disputed.slice(0, 8).map((d) => d.symbol + "(" + d.reason[0] + ")").join(" "));
+if (s.disputed.length) {
+  const d0 = s.disputed[0]; r = await call("get_token_unlocks", { token: d0.symbol }); const u0 = r.result.structuredContent.unlocks.find((x) => x.date_utc === d0.date_utc);
+  assert.equal(u0.disputed, true); assert.equal(u0.dispute_summary, d0.summary); ok("live: " + d0.symbol + " carries disputed=true in get_token_unlocks: " + d0.summary);
+}
+r = await call("get_upcoming_unlocks", { min_strength: "huge" }); assert.equal(r.result.isError, true); ok("live: wrong enum -> isError: " + r.result.content[0].text);
+r = await call("check_portfolio", { tokens: [sym, "bitcoin", "zzzqqq"], days: 60, lang: "ru" }); s = r.result.structuredContent;
+assert.equal(s.with_unlocks[0].symbol, sym); assert.equal(s.unknown.length, 2); assert.ok(s.portfolio_page.includes("my-coins.html?coins=" + sym)); ok("live check_portfolio: " + JSON.stringify(s.summary) + " " + s.portfolio_page);
+const big = (await call("get_upcoming_unlocks", { days: 60, limit: 100 })).result.content[0].text.length, small = (await call("get_upcoming_unlocks", { days: 60, limit: 100, detail: "brief" })).result.content[0].text.length;
+ok("live size of the largest answer: full " + big + " chars, brief " + small + " chars");
 console.log("all passed:", pass);
